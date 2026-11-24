@@ -1,13 +1,16 @@
-# infinilaunch documentation index
+# InfiniLaunch documentation
 
-Planned Android application launcher.
+The following documents describe the planned application and the workflow for
+building it. The implementation and device checks are pending.
 
-## Start here
+- [Repository overview and build status](../README.md)
+- [Application behavior and scope](APPLICATION.md)
+- [Architecture, shared files, and provider contracts](architecture.md)
+- [Programs directory, reconciliation, and notifications](programs.md)
+- [Home workspaces, widgets, and Canvas wallpaper](home.md)
+- [Implementation sequence, repository handoffs, and acceptance](workflow.md)
+- [Repository guidance](../AGENTS.md)
+- [Generated InfiniForge ecosystem map](ECOSYSTEM.md)
 
-- [Application description and implementation status](APPLICATION.md).
-
-- [Project overview and standalone build](../README.md).
-- [Repository-specific agent guidance](../AGENTS.md).
-- [InfiniForge ecosystem map](ECOSYSTEM.md) — generated from the organization manifest; do not edit this copy.
-
-This repository is currently a planned placeholder. It has no implemented public API or standalone build documentation yet.
+The local design docs describe the planned changes. The ecosystem map is a
+generated inventory and is updated through the central InfiniForge manifest.

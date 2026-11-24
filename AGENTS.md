@@ -1,32 +1,36 @@
 # InfiniLaunch agent guidance
 
-InfiniLaunch is a planned Infiniforge application launcher. The intended role includes launching apps and related launch functions; details can evolve as the project is designed. This directory is a project placeholder.
+InfiniLaunch is an Android Home app whose Programs menu is a real shared
+directory. This repository currently contains the design and implementation
+workflow.
 
-## Independence and integration
+## Ownership and integration
 
-- Establish a standalone Android application build in this repository. It must build from its own checkout with only its declared and pinned library dependencies and documented toolchain.
-- Keep its Gradle build independent from every other application. Do not import sibling app source or depend on sibling build outputs.
-- Use public Android package, activity, and launcher APIs. Handle unavailable or disabled targets safely and respect Android permission and background-launch rules.
-- Infinifolder and all other Infiniforge apps remain optional; the launcher must not depend on suite-wide source or private APIs.
+- Keep InfiniLaunch independently buildable and installable. Use declared, pinned
+  library dependencies and document the standalone toolchain and build command.
+- InfiniFolder supplies all file browsing, file selection, editing, and access to
+  the shared launcher directory. Integrate through libinfiniselect and documented
+  Android contracts. Use the explicit unavailable state if Folder cannot provide
+  a feature. Do not add a system picker, second browser, or alternate app drawer.
+- Keep launcher-owned durable data in the shared `infini/launch` tree. The Programs
+  tree and its real `.iflink` files are authoritative. Do not create a private
+  database, private preferences store, or mirror of Programs.
+- Use public Android APIs for Home, package events, notifications, widget hosting,
+  and wallpaper. Use libinfinicanvas for wallpaper decoding and animation.
+- Keep the storage provider and browser implementation in InfiniFolder. Never
+  import a sibling application's code, Gradle project, or build output, or
+  access its private data.
 
-## Project focus
+## Development workflow
 
-- Keep launcher functionality and supported Android versions explicit in the app documentation as implementation develops.
-- Document the app's standalone build and keep library revisions explicit.
-
-## Ecosystem workflow for agents
-
-1. Read `docs/ECOSYSTEM.md` first to understand the component map and ownership boundaries.
-2. Read `docs/APPLICATION.md` for this app's intended role and current status. Before changing a public interface, read the repository's architecture and API documentation listed below and inspect compatibility notes.
-3. Check the owning shared library repository before implementing behavior that may already exist elsewhere. Do not conclude a capability is unavailable just because its implementation is outside the current repository.
-4. Keep application responsibilities, shared library APIs, and other applications' private data/source separate.
-5. Before a cross-repository change, check the exact dependency pin and the relevant interoperability contract. Dependency versions and protocol versions are separate; do not infer protocol incompatibility from a library-version mismatch.
-6. Update the local documentation index and relevant API/behavior documentation when public behavior changes. `docs/ECOSYSTEM.md` is generated from the central manifest and must not be edited locally.
-
-## Documentation index
-
-- `README.md` — project purpose, prerequisites, and standalone build instructions.
-- `AGENTS.md` — repository-specific development rules and this ecosystem workflow.
-- `docs/README.md` — local documentation index.
-- `docs/APPLICATION.md` — application purpose, responsibilities, implementation status, planned work, and known limits.
-- `docs/ECOSYSTEM.md` — generated ecosystem-wide inventory, boundaries, dependencies, versions, and protocols.
+1. Read [the generated ecosystem map](docs/ECOSYSTEM.md), then the
+   [application spec](docs/APPLICATION.md) and [architecture](docs/architecture.md).
+2. Use [the implementation workflow](docs/workflow.md) for sequencing and
+   acceptance. Read [Programs](docs/programs.md) and [Home](docs/home.md) before
+   changing those features.
+3. Inspect the owning library before adding reusable behavior. Check the exact
+   dependency pin and public protocol before changing a cross-repository contract.
+   Land each app or library change in its own repository.
+4. Update the documentation index and relevant behavior or API docs with the
+   implementation. The generated ecosystem map is synchronized centrally and
+   must not be edited in this repository.
