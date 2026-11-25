@@ -1,8 +1,9 @@
 # InfiniLaunch implementation workflow
 
-This is the delivery plan. No build or device validation has happened yet.
-Record actual toolchain versions, dependency pins, commands, and evidence as
-each milestone lands.
+The first Programs flow is implemented across InfiniLaunch and InfiniFolder.
+On Termux, InfiniLaunch's standalone `./build.sh` and InfiniFolder's arm64
+`:app:assembleDebug` both produced debug APKs. The device acceptance steps
+below are still pending.
 
 ## 1. Standalone shell and the first shared Programs flow
 
@@ -13,10 +14,9 @@ each milestone lands.
    supported toolchain when scaffolding.
 2. Pin libinfiniselect and any direct shared dependencies. Verify the namespace
    mapping with the actual application ID on the integration build.
-3. Implement the missing public storage capabilities in InfiniFolder and the
-   client support in libinfiniselect. Reuse Folder's installed-app source,
-   classification rules, app links, and browser. Add the strict Folder-only
-   path and opening actions required by
+3. Implement the public Programs provider in InfiniFolder and call it through
+   the app-specific Android contract. Reuse the installed package APIs,
+   classification rules, app links, and libinfiniselect browser. See
    [the architecture](architecture.md#provider-contracts).
 4. Open Programs in the shared tree and attach the embedded browser. Implement
    startup reconciliation, install event scheduling, the shared checkpoint, and
@@ -28,6 +28,14 @@ Programs, move or rename its actual link in InfiniFolder, then reopen
 InfiniLaunch and verify that the link stays in its new location.
 
 ## 2. Workspace layout and widget hosting
+
+The transparent workspace, configurable grid, combined desktop reorganization
+editor, shared dock, system Clock, app-grouped widget chooser, and pinned
+shortcut flow are implemented. The editor can select and reposition any widget
+or launcher, allows temporary overlap, and saves only a fully valid arrangement.
+Named desktop workspaces, directory launchers, and cyclic swipes are
+implemented. The remaining workspace steps cover configurable roots for
+additional browser instances and future transition rendering.
 
 1. Add workspace pages and persist layout through the shared file contract.
 2. Support Android Home role transitions, pinned app and resource links, and
@@ -58,7 +66,7 @@ reopens the chosen source. Hide Home and verify playback pauses.
 | --- | --- |
 | InfiniLaunch | Standalone app, package callback and worker, Home layout, widget slots, wallpaper service, integration docs, and dependency pins. |
 | InfiniFolder | Scoped install inventory, recursive ensure-link and metadata operations, plus public browser/open behavior needed by the launcher. |
-| libinfiniselect | Typed client contracts, strict Folder-only behavior, and embedded panel support as needed. Keep existing behavior for other consumers. |
+| libinfiniselect | Reuse the existing embedded browser. Add reusable Folder-only selection and panel support when later features need it. |
 | libinfinicore | Reuse existing app URI and category helpers. Change their public API only if compatibility requires it. |
 | libinfinicanvas | Reuse decode and playback APIs. Add only missing reusable rendering behavior in this library. |
 
@@ -78,14 +86,15 @@ These checks define release evidence. They are pending.
   launch an app, return with Home, and switch back to another Home app.
 - **Real Programs tree:** Seed visible packages into category directories. Open
   a generated link in both InfiniFolder and the embedded Programs view. Check a
-  package
-  without a launch activity. Rename, move, and duplicate links, including a
+  package without a launch activity. Rename, move, and duplicate links, including a
   move into a nested custom category. Add ordinary files and directory links.
   Inspect the actual tree after another pass. Verify that removing the last
   installed app link restores it quietly and that uninstalling does not erase
   it.
 - **Background sync:** Install one app, then several in quick succession.
-  Check the notification names and actual folders. Verify updates do not
+  Check that Home shows the scan indicator during the pass and that users can
+  open existing Programs and dock links while it is active. Check the
+  notification names and actual folders. Verify updates do not
   notify. Stop the launcher process, install an app, and confirm the next
   startup catches up. Check notification denial, interruption around a
   checkpoint, and a concurrent move during reconciliation.
@@ -95,9 +104,22 @@ These checks define release evidence. They are pending.
   issue, no alternate picker or private store is created, and data access can
   resume after recovery.
 - **Workspaces and widgets:** Exercise binding and cancellation, provider
-  configuration, resize, removal, role changes, restart, and rotation. Test
+  configuration, removal, role changes, restart, and rotation. Check that the
+  near-square grid fills the usable area in both orientations, leaving the
+  system bars and dock clear. Check that moves and resizes survive reopening
+  Home and that a failed save keeps the draft visible. Check frozen previews
+  for an Android widget and Programs, including the selected preview's tint. Check the Programs and dock tint
+  with Android window blur enabled and disabled. Test
   multiple browser panels, locked roots, scrolling, Back, surface recreation,
-  and Folder process loss.
+  and Folder process loss. Create two workspace directories, copy a file and
+  a shortcut, move their desktop launchers, and swipe through both directions.
+  Pin an Android shortcut and verify its file is in the active workspace.
+  Test Browse, New folder, a stationary hold, a drag to a free cell, and
+  moving and copying a file and a directory into a desktop folder.
+  In desktop reorganization, overlap a widget and launcher, use selection
+  controls to reach both items, and confirm Save remains disabled until all
+  overlaps are cleared. Verify Cancel discards the complete draft and Save
+  restores the full arrangement after reopening Home.
 - **Wallpaper:** Cover a static image, a native animated drawable, a Canvas
   frame animation, and IFF palette cycling. Verify animation timing, restart,
   preview isolation, source-access loss, resource release, and visibility

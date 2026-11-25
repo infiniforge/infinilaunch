@@ -1,8 +1,8 @@
 # InfiniLaunch architecture
 
-This document specifies the planned boundaries and file layout. The public
-contract additions below are design requirements; their method names and wire
-formats will be documented in the owning repositories before release.
+This document specifies application boundaries and file layout. InfiniFolder
+serves the Programs and dock directories and stores the first workspace
+layout. Wallpaper source persistence is planned.
 
 ## Responsibilities
 
@@ -15,12 +15,11 @@ formats will be documented in the owning repositories before release.
 | libinfinicanvas | Image detection, decoding, still frames, and supported animation renderers. |
 | Android | The Home role, installed package metadata and events, notification permission and posting, widget bindings and shortcut host permission, and the selected system wallpaper service. |
 
-Android 11 (API 30) is the planned minimum because the embedded browser needs
+Android 11 (API 30) is the minimum because the embedded browser needs
 `SurfaceControlViewHost`. InfiniLaunch builds as its own app with pinned
 libraries and no InfiniFolder Gradle dependency. Loading Folder capabilities
-happens at runtime. The proposed application ID and collection client ID are
-`com.infinilaunch` and `infinilaunch`, which match the existing verified package
-to collection namespace rule.
+happens at runtime. The application ID is `com.infinilaunch`. Folder verifies
+this caller for the Programs provider contract.
 
 ## Shared file layout
 
@@ -31,13 +30,17 @@ public contract.
 | Path | Contents and ownership |
 | --- | --- |
 | `infini/launch/programs/` | The user-managed Programs tree and its app `.iflink` files. Sync creates missing app links and the destination category folders through Folder. |
-| `infini/launch/workspaces/layout.json` | Versioned Home layout. Stores ordered pages, grid positions and sizes, and references for pinned items, embedded browsers, and Android widgets. |
+| `infini/launch/dock/` | User-managed shortcuts and other resources. A hidden `.folder.xml` sets the dock presentation. |
+| `infini/launch/desktop/<workspace>/.desktop.json` | Workspace grid, widget positions and bindings, and optional file-launcher placements. |
+| `infini/launch/desktop/<workspace>/` | Direct child files and shortcuts appear as desktop launchers. |
+| `infini/launch/desktop/.active` | The selected workspace directory name. |
+| `infini/launch/workspaces/layout.json` | Legacy layout copied into Home when its desktop settings are missing. |
 | `infini/launch/wallpaper/source.iflink` | The selected wallpaper source as a durable resource reference. The original file can live anywhere accessible to Folder. |
 | `infini/launch/state/install-sync.json` | A small versioned checkpoint for install notification delivery, with any unissued summary. Programs itself remains the only catalog of links. |
 
-Only the Programs location is fixed by the product requirement. The companion
-paths above are the proposed version-one layout. Create files only when their
-feature needs them. Store versioned metadata as plain files in this tree and
+Programs, the dock, workspace layout, and sync checkpoint use the paths above.
+The wallpaper path is reserved for its milestone. Create files
+only when their feature needs them. Store versioned metadata as plain files in this tree and
 replace it atomically through Folder. Check for stale writes where a file can be
 edited by both apps. Retain malformed or unsupported-version user files and
 offer a clear recovery state instead of silently resetting them. Serialize
@@ -51,29 +54,33 @@ Folder-owned and opaque to the launcher.
 
 ## Provider contracts
 
-Use current libinfiniselect APIs for browser embedding and durable source
-resolution where they meet the feature requirements. Keep the Programs browser
-anchored at its directory and delegate file actions to Folder. Where the
-existing embedded selector returns a regular file selection, expose or use a
-public Folder action that opens it with the same grants and behavior as the
-normal Folder browser.
+InfiniLaunch uses libinfiniselect to host Folder's browser. Folder's session
+opens files and links on tap, and its full-browser button opens the current
+directory for editing. Programs anchors the embedded view to an authoritative
+directory provided by Folder. The workspace editor keeps temporary widget
+previews in memory. Folder supplies the preview for its current Programs
+surface through the same caller-verified provider.
 
-Add a scoped Programs contract for a fresh current-profile install inventory
-and reconciliation. The install inventory should reuse InfiniFolder's existing
-installed-application provider and classifier. It needs package identity,
-label, defined category, and installation time, with a clear distinction
-between a complete inventory and an unavailable or incomplete result. The
-existing cached or paged directory listings are not sufficient as a fresh
-package inventory or an atomic create-if-missing operation.
+The Programs-specific Android provider method is
+`com.infinifolder.launch.PROGRAMS`, version 1, on
+`content://com.infinifolder.selection`. The caller is verified by the provider.
+It returns the Programs or dock directory, lists named desktop workspaces and
+their direct file launchers, provides each launcher's resolved label and icon
+from Folder's shared resource icon resolver, reads or saves dock presentation
+and desktop settings,
+resolves foreground opens, manages native shortcut files, orders and removes
+dock entries, routes launcher moves between managed directories, runs
+reconciliation, and acknowledges pending notices. The initial client lives in InfiniLaunch because the method is
+specific to this app. libinfiniselect's existing browser and `.iflink` format
+are unchanged. The Folder implementation and wire fields are documented in
+`docs/launch-programs.md` in the InfiniFolder repository.
 
-Folder validates the caller and restricts writes to the defined
-`infini/launch` operations. Programs sync only creates a link if its package is
-absent from the whole Programs tree. Its result includes the authoritative
-location of the existing or created link so a notification can open the
-correct category. Scoped metadata reads and conditional atomic writes cover
-the launcher files above. Use bounded transport and return explicit incomplete,
-unsupported, unavailable, and conflict results. Implement and document the
-provider in InfiniFolder and the client in libinfiniselect as separate changes.
+Folder requests a fresh current-profile Android inventory and applies the shared
+category helper. Folder atomically creates links for packages absent from the
+whole tree and stores the install checkpoint. The result identifies new apps
+and their actual category locations. Workspace writes replace the shared file
+only if it still matches what the launcher read. Wallpaper operations will
+extend the contract when that feature is implemented.
 
 The default libinfiniselect picker and collections support system or private
 fallbacks for other clients. InfiniLaunch uses a Folder-only path, including

@@ -1,8 +1,8 @@
 # InfiniLaunch agent guidance
 
 InfiniLaunch is an Android Home app whose Programs menu is a real shared
-directory. This repository currently contains the design and implementation
-workflow.
+directory. See the application spec and implementation workflow for current
+behavior and planned milestones.
 
 ## Ownership and integration
 

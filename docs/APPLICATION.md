@@ -25,16 +25,18 @@ rules for initial setup, repairs, and interrupted passes.
 
 ## Home, widgets, and wallpaper
 
-Home provides multiple workspace pages, standard Android wallpaper, app and
-resource shortcuts, and resizable third-party Android widgets. An InfiniFolder
-browser panel can occupy a slot in the same grid and open Programs or another
-Folder directory. The included live wallpaper selects its source through
-InfiniFolder and plays supported still images and animations using
-libinfinicanvas. See [Home and wallpaper](home.md).
+Home shows Android's current wallpaper behind named workspaces, with a
+system Clock slot at the top right and the embedded Programs widget at the
+lower right by default. The bottom dock scrolls through files in
+`infini/launch/dock`, including Android pinned shortcuts. Long-press empty
+space for application widgets. Workspace edits are saved through InfiniFolder.
+Each directory in `infini/launch/desktop` is a workspace and its files appear as
+launchers. Swipes cycle through the workspaces. Configurable browser roots and
+libinfinicanvas live wallpaper are planned. See [Home and wallpaper](home.md).
 
 ## Runtime requirements and unavailable states
 
-The planned minimum is Android 11 (API 30), with the personal/current profile as
+The minimum is Android 11 (API 30), with the personal/current profile as
 the first supported profile. Additional work and private profiles need an
 explicit profile-aware link contract and device coverage.
 
@@ -48,6 +50,7 @@ browser, alternate app list, or private data store.
 
 ## Implementation status
 
-This is the approved direction for the design. The application, storage API
-extensions, install job, workspaces, widgets, and wallpaper are all planned.
-See the [implementation workflow](workflow.md) for delivery order and acceptance.
+The Home activity, initial workspace, Clock slot, dock, Folder-hosted Programs
+widget, package-triggered sync, and shared install checkpoint are implemented.
+See the [implementation workflow](workflow.md) for remaining delivery and
+device checks.

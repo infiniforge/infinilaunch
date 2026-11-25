@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <title>InfiniLaunch app grid</title>
+  <defs>
+    <linearGradient id="screen" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop stop-color="#356e83"/>
+      <stop offset=".48" stop-color="#163b51"/>
+      <stop offset="1" stop-color="#0b2236"/>
+    </linearGradient>
+    <linearGradient id="tile" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop stop-color="#aad9dc"/>
+      <stop offset="1" stop-color="#548f9e"/>
+    </linearGradient>
+  </defs>
+  <rect x="47" y="49" width="418" height="414" rx="83" fill="url(#screen)" stroke="#101d30" stroke-width="12"/>
+  <rect x="58" y="60" width="396" height="392" rx="72" fill="none" stroke="#88c6d5" stroke-opacity=".52" stroke-width="4"/>
+  <g fill="url(#tile)" stroke="#08263a" stroke-width="4">
+    <rect x="133" y="91" width="62" height="62" rx="15"/>
+    <rect x="225" y="91" width="62" height="62" rx="15"/>
+    <rect x="317" y="91" width="62" height="62" rx="15"/>
+    <rect x="133" y="359" width="62" height="62" rx="15"/>
+    <rect x="225" y="359" width="62" height="62" rx="15"/>
+    <rect x="317" y="359" width="62" height="62" rx="15"/>
+  </g>
+  <g fill="none" stroke="#193e4e" stroke-width="6" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M150 130l14-16 14 16"/>
+    <path d="M247 117h18m-18 10h18"/>
+    <path d="M348 111v22m-11-11h22"/>
+    <path d="M152 390h24"/>
+    <path d="M250 382l15 8-15 8z" fill="#193e4e"/>
+    <path d="M337 390l8 8 15-16"/>
+  </g>
+</svg>
