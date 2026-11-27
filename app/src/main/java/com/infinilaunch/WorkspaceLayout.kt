@@ -2,7 +2,6 @@ package com.infinilaunch
 
 import org.json.JSONArray
 import org.json.JSONObject
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal data class WorkspaceGrid(val columns: Int = 6, val rows: Int = 5) {
@@ -17,30 +16,58 @@ internal data class WorkspaceGrid(val columns: Int = 6, val rows: Int = 5) {
 
         fun forArea(columns: Int, width: Int, height: Int): WorkspaceGrid {
             require(width > 0 && height > 0)
-            val rows = (columns * height.toDouble() / width).roundToInt().coerceIn(1, MAX_ROWS)
+            // Fit whole square cells first. WorkspaceGeometry then stretches
+            // those rows evenly across the full available height.
+            val rows = (columns * height.toDouble() / width).toInt().coerceIn(1, MAX_ROWS)
             return WorkspaceGrid(columns, rows)
         }
     }
 }
 
-internal data class WorkspacePlacement(val column: Int, val row: Int, val width: Int, val height: Int) {
+internal data class WorkspacePlacement(
+    val column: Int,
+    val row: Int,
+    val width: Int,
+    val height: Int,
+    val columnOffsetHalf: Int = 0,
+    val rowOffsetHalf: Int = 0,
+) {
     init {
         require(column >= 0 && row >= 0 && width >= 1 && height >= 1)
+        require(columnOffsetHalf in 0..1 && rowOffsetHalf in 0..1)
     }
 
+    val columnUnits: Int get() = column * 2 + columnOffsetHalf
+    val rowUnits: Int get() = row * 2 + rowOffsetHalf
+
     fun fits(grid: WorkspaceGrid) =
-        column < grid.columns && row < grid.rows && width <= grid.columns - column && height <= grid.rows - row
+        columnUnits < grid.columns * 2 && rowUnits < grid.rows * 2 &&
+            width * 2 <= grid.columns * 2 - columnUnits && height * 2 <= grid.rows * 2 - rowUnits
 
     fun overlaps(other: WorkspacePlacement) =
-        column < other.column + other.width && other.column < column + width &&
-            row < other.row + other.height && other.row < row + height
+        columnUnits < other.columnUnits + other.width * 2 && other.columnUnits < columnUnits + width * 2 &&
+            rowUnits < other.rowUnits + other.height * 2 && other.rowUnits < rowUnits + height * 2
 
-    fun move(column: Int, row: Int, grid: WorkspaceGrid) =
-        copy(column = column.coerceIn(0, grid.columns - width), row = row.coerceIn(0, grid.rows - height))
+    fun move(column: Int, row: Int, grid: WorkspaceGrid) = fromHalfUnits(
+        (column * 2).coerceIn(0, grid.columns * 2 - width * 2),
+        (row * 2).coerceIn(0, grid.rows * 2 - height * 2),
+        width,
+        height,
+    )
+
+    fun moveByHalf(columnDelta: Int, rowDelta: Int, grid: WorkspaceGrid) = fromHalfUnits(
+        (columnUnits + columnDelta).coerceIn(0, grid.columns * 2 - width * 2),
+        (rowUnits + rowDelta).coerceIn(0, grid.rows * 2 - height * 2),
+        width,
+        height,
+    )
 
     companion object {
         val DEFAULT = WorkspacePlacement(3, 3, 3, 2)
         val CLOCK = WorkspacePlacement(3, 0, 3, 1)
+
+        fun fromHalfUnits(columnUnits: Int, rowUnits: Int, width: Int, height: Int) =
+            WorkspacePlacement(columnUnits / 2, rowUnits / 2, width, height, columnUnits % 2, rowUnits % 2)
     }
 }
 
@@ -61,6 +88,16 @@ internal data class WidgetBinding(val id: Int, val provider: String) {
 
 internal data class HostedWidget(val binding: WidgetBinding, val placement: WorkspacePlacement)
 
+internal data class WorkspaceInsets(val horizontalDp: Int = 0, val verticalDp: Int = 0) {
+    init {
+        require(horizontalDp in -MAX_DP..MAX_DP && verticalDp in -MAX_DP..MAX_DP)
+    }
+
+    companion object {
+        const val MAX_DP = 512
+    }
+}
+
 internal data class WorkspaceLayout(
     val programs: WorkspacePlacement? = WorkspacePlacement.DEFAULT,
     val clock: WidgetBinding? = null,
@@ -68,7 +105,33 @@ internal data class WorkspaceLayout(
     val grid: WorkspaceGrid = WorkspaceGrid(),
     val clockPlacement: WorkspacePlacement? = WorkspacePlacement.CLOCK,
     val launchers: Map<String, WorkspacePlacement> = emptyMap(),
+    val itemInsets: Map<WorkspaceItem, WorkspaceInsets> = emptyMap(),
+    /** Item order from back to front. */
+    val layerOrder: List<WorkspaceItem> = emptyList(),
 ) {
+    fun insetsFor(item: WorkspaceItem): WorkspaceInsets = itemInsets[item] ?: WorkspaceInsets()
+
+    fun itemsBackToFront(): List<WorkspaceItem> {
+        val placed = placements().keys
+        val ordered = layerOrder.filter { it in placed }.distinct()
+        return ordered + placed.filterNot(ordered.toSet()::contains)
+    }
+
+    fun withLayerOrder(order: List<WorkspaceItem>): WorkspaceLayout {
+        val placed = placements().keys
+        val ordered = order.filter { it in placed }.distinct()
+        return copy(layerOrder = ordered + placed.filterNot(ordered.toSet()::contains))
+    }
+
+    fun bringToFront(item: WorkspaceItem): WorkspaceLayout =
+        if (item !in placements()) this else withLayerOrder(itemsBackToFront().filterNot { it == item } + item)
+
+    fun withInsets(item: WorkspaceItem, value: WorkspaceInsets): WorkspaceLayout {
+        if (item !in placements()) return this
+        val updated = if (value == WorkspaceInsets()) itemInsets - item else itemInsets + (item to value)
+        return copy(itemInsets = updated)
+    }
+
     fun placements(): Map<WorkspaceItem, WorkspacePlacement> = buildMap {
         programs?.let { put(WorkspaceItem.Programs, it) }
         clockPlacement?.let { put(WorkspaceItem.Clock, it) }
@@ -85,33 +148,35 @@ internal data class WorkspaceLayout(
                 invalid.add(item)
             }
         }
-        val entries = current.entries.toList()
-        for (first in entries.indices) for (second in first + 1 until entries.size) {
-            val a = entries[first]
-            val b = entries[second]
-            if (a.value.overlaps(b.value)) {
-                invalid.add(a.key)
-                invalid.add(b.key)
-            }
-        }
         return invalid
     }
 
     fun isValid() = invalidItems().isEmpty()
 
     fun withPlacement(item: WorkspaceItem, position: WorkspacePlacement?): WorkspaceLayout = when (item) {
-        WorkspaceItem.Programs -> copy(programs = position)
-        WorkspaceItem.Clock -> copy(clock = clock.takeIf { position != null }, clockPlacement = position)
+        WorkspaceItem.Programs -> copy(programs = position,
+            itemInsets = if (position == null) itemInsets - item else itemInsets,
+            layerOrder = if (position == null) layerOrder - item else layerOrder)
+        WorkspaceItem.Clock -> copy(clock = clock.takeIf { position != null }, clockPlacement = position,
+            itemInsets = if (position == null) itemInsets - item else itemInsets,
+            layerOrder = if (position == null) layerOrder - item else layerOrder)
         is WorkspaceItem.App -> copy(hosted = hosted.mapNotNull {
             if (it.binding.id != item.id) it else position?.let { position -> it.copy(placement = position) }
-        })
+        }, itemInsets = if (position == null) itemInsets - item else itemInsets,
+            layerOrder = if (position == null) layerOrder - item else layerOrder)
         is WorkspaceItem.Launcher -> copy(launchers = if (position == null) launchers - item.filename
-            else launchers + (item.filename to position))
+            else launchers + (item.filename to position),
+            itemInsets = if (position == null) itemInsets - item else itemInsets,
+            layerOrder = if (position == null) layerOrder - item else layerOrder)
     }
 
     fun forDesktop(files: List<String>, width: Int, height: Int, columns: Int = grid.columns): WorkspaceLayout {
         val known = files.toSet()
-        var visible = copy(launchers = launchers.filterKeys { it in known }).forArea(width, height, columns)
+        var visible = copy(
+            launchers = launchers.filterKeys { it in known },
+            itemInsets = itemInsets.filterKeys { it !is WorkspaceItem.Launcher || it.filename in known },
+            layerOrder = layerOrder.filter { it !is WorkspaceItem.Launcher || it.filename in known },
+        ).forArea(width, height, columns)
         val missing = files.filterNot(visible.launchers::containsKey)
         val cellsNeeded = visible.placements().values.sumOf { it.width * it.height } + missing.size
         if (visible.grid.rows == 1 && visible.programs != null && cellsNeeded > visible.grid.columns) {
@@ -135,6 +200,7 @@ internal data class WorkspaceLayout(
         }.iterator()
         for (file in missing) placements[file] = cells.next()
         return visible.copy(grid = WorkspaceGrid(columns, rows), launchers = placements)
+            .withLayerOrder(visible.itemsBackToFront() + missing.map { WorkspaceItem.Launcher(it) })
     }
 
     fun forArea(width: Int, height: Int, columns: Int = grid.columns): WorkspaceLayout {
@@ -151,60 +217,77 @@ internal data class WorkspaceLayout(
     private fun withGrid(newGrid: WorkspaceGrid, compact: Boolean): WorkspaceLayout? {
         if (newGrid == grid && !compact) return this
         var resized = copy(grid = newGrid)
-        val taken = mutableListOf<WorkspacePlacement>()
-        val items = placements().entries.sortedByDescending { it.value.width * it.value.height }
-        for ((item, old) in items) {
-            val col = project(old.column, grid.columns, newGrid.columns)
-            val row = project(old.row, grid.rows, newGrid.rows)
+        for ((item, old) in placements()) {
             val minWidth = item.minimumSpan
             val minHeight = minOf(item.minimumSpan, newGrid.rows)
+            val colUnits = project(old.columnUnits, grid.columns * 2, newGrid.columns * 2)
+                .coerceIn(0, newGrid.columns * 2 - minWidth * 2)
+            val rowUnits = project(old.rowUnits, grid.rows * 2, newGrid.rows * 2)
+                .coerceIn(0, newGrid.rows * 2 - minHeight * 2)
             val fixedSize = compact || item is WorkspaceItem.Launcher
+            val projectedRight = project(old.columnUnits + old.width * 2, grid.columns * 2, newGrid.columns * 2)
+                .coerceIn(0, newGrid.columns * 2)
+            val projectedBottom = project(old.rowUnits + old.height * 2, grid.rows * 2, newGrid.rows * 2)
+                .coerceIn(0, newGrid.rows * 2)
+            val maxWidth = (newGrid.columns * 2 - colUnits) / 2
+            val maxHeight = (newGrid.rows * 2 - rowUnits) / 2
             val width = if (fixedSize) minWidth else
-                (project(old.column + old.width, grid.columns, newGrid.columns) - col).coerceAtLeast(minWidth)
+                ((projectedRight - colUnits) / 2.0).roundToInt().coerceIn(minWidth, maxWidth)
             val height = if (fixedSize) minHeight else
-                (project(old.row + old.height, grid.rows, newGrid.rows) - row).coerceAtLeast(minHeight)
-            var placement: WorkspacePlacement? = null
-            var distance = Int.MAX_VALUE
-            for (y in 0..newGrid.rows - height) {
-                for (x in 0..newGrid.columns - width) {
-                    val steps = abs(x - col) + abs(y - row)
-                    if (steps >= distance) continue
-                    val candidate = WorkspacePlacement(x, y, width, height)
-                    if (taken.none(candidate::overlaps)) {
-                        placement = candidate
-                        distance = steps
-                    }
-                }
-            }
-            if (placement == null) return null
-            taken.add(placement)
-            resized = resized.withPlacement(item, placement)
+                ((projectedBottom - rowUnits) / 2.0).roundToInt().coerceIn(minHeight, maxHeight)
+            resized = resized.withPlacement(item,
+                WorkspacePlacement.fromHalfUnits(colUnits, rowUnits, width, height))
         }
         return resized
     }
 
     fun encode(): String {
-        require(isValid()) { "Workspace items must fit the grid without overlapping." }
+        require(isValid()) { "Workspace items must fit the grid." }
         val widgets = JSONArray()
-        programs?.let { widgets.put(JSONObject().put("type", "programs").setPlacement(it)) }
+        programs?.let { position ->
+            widgets.put(JSONObject().put("type", "programs").setPlacement(position)
+                .putInsets(insetsFor(WorkspaceItem.Programs)))
+        }
         clockPlacement?.let { position ->
             val value = JSONObject().put("type", "clock").setPlacement(position)
+                .putInsets(insetsFor(WorkspaceItem.Clock))
             clock?.let { value.put("binding", it.id).put("provider", it.provider) }
             widgets.put(value)
         }
         hosted.forEach { widget ->
             widgets.put(JSONObject().put("type", "app-widget").put("binding", widget.binding.id)
-                .put("provider", widget.binding.provider).setPlacement(widget.placement))
+                .put("provider", widget.binding.provider).setPlacement(widget.placement)
+                .putInsets(insetsFor(WorkspaceItem.App(widget.binding.id))))
         }
         val files = JSONArray()
-        launchers.forEach { (filename, placement) -> files.put(JSONObject().put("file", filename).setPlacement(placement)) }
+        launchers.forEach { (filename, placement) ->
+            files.put(JSONObject().put("file", filename).setPlacement(placement)
+                .putInsets(insetsFor(WorkspaceItem.Launcher(filename))))
+        }
+        val layers = JSONArray()
+        itemsBackToFront().forEach { layers.put(it.layerRecord()) }
         return JSONObject().put("version", 1)
             .put("grid", JSONObject().put("columns", grid.columns).put("rows", grid.rows))
-            .put("widgets", widgets).put("launchers", files).toString()
+            .put("widgets", widgets).put("launchers", files).put("layerOrder", layers).toString()
     }
 
-    private fun JSONObject.setPlacement(value: WorkspacePlacement) =
+    private fun JSONObject.setPlacement(value: WorkspacePlacement) = apply {
         put("column", value.column).put("row", value.row).put("width", value.width).put("height", value.height)
+        if (value.columnOffsetHalf != 0) put("columnOffsetHalf", value.columnOffsetHalf)
+        if (value.rowOffsetHalf != 0) put("rowOffsetHalf", value.rowOffsetHalf)
+    }
+
+    private fun JSONObject.putInsets(value: WorkspaceInsets) = apply {
+        if (value.horizontalDp != 0) put("marginHorizontalDp", value.horizontalDp)
+        if (value.verticalDp != 0) put("marginVerticalDp", value.verticalDp)
+    }
+
+    private fun WorkspaceItem.layerRecord(): JSONObject = when (this) {
+        WorkspaceItem.Programs -> JSONObject().put("type", "programs")
+        WorkspaceItem.Clock -> JSONObject().put("type", "clock")
+        is WorkspaceItem.App -> JSONObject().put("type", "app-widget").put("binding", id)
+        is WorkspaceItem.Launcher -> JSONObject().put("type", "launcher").put("file", filename)
+    }
 
     companion object {
         const val MAX_HOSTED = 12
@@ -212,8 +295,10 @@ internal data class WorkspaceLayout(
 
         private fun project(value: Int, old: Int, new: Int) = (value * new.toDouble() / old).roundToInt()
 
-        private fun JSONObject.placement() =
-            WorkspacePlacement(getInt("column"), getInt("row"), getInt("width"), getInt("height"))
+        private fun JSONObject.placement() = WorkspacePlacement(
+            getInt("column"), getInt("row"), getInt("width"), getInt("height"),
+            optInt("columnOffsetHalf", 0), optInt("rowOffsetHalf", 0),
+        )
 
         private fun JSONObject.binding() = WidgetBinding(getInt("binding"), getString("provider"))
 
@@ -233,6 +318,15 @@ internal data class WorkspaceLayout(
             var programs: WorkspacePlacement? = null
             var clock: WidgetBinding? = null
             var clockPosition: WorkspacePlacement? = if (legacy) WorkspacePlacement.CLOCK else null
+            val itemInsets = mutableMapOf<WorkspaceItem, WorkspaceInsets>()
+
+            fun readInsets(item: WorkspaceItem, source: JSONObject) {
+                val insets = WorkspaceInsets(
+                    source.optInt("marginHorizontalDp", 0),
+                    source.optInt("marginVerticalDp", 0),
+                )
+                if (insets != WorkspaceInsets()) itemInsets[item] = insets
+            }
 
             fun position(item: JSONObject): WorkspacePlacement {
                 val saved = item.placement()
@@ -247,15 +341,20 @@ internal data class WorkspaceLayout(
                 val type = widget.getString("type")
                 if (type == "programs" || type == "clock") require(seen.add(type))
                 when (type) {
-                    "programs" -> programs = position(widget)
+                    "programs" -> {
+                        programs = position(widget)
+                        readInsets(WorkspaceItem.Programs, widget)
+                    }
                     "clock" -> {
                         if (widget.has("binding")) clock = widget.binding().also { require(bindings.add(it.id)) }
                         if (!legacy) clockPosition = position(widget)
+                        readInsets(WorkspaceItem.Clock, widget)
                     }
                     "app-widget" -> {
                         val binding = widget.binding()
                         require(bindings.add(binding.id))
                         hosted.add(HostedWidget(binding, position(widget)))
+                        readInsets(WorkspaceItem.App(binding.id), widget)
                     }
                     else -> error("Unsupported workspace item type")
                 }
@@ -273,16 +372,32 @@ internal data class WorkspaceLayout(
                         require(filename.isNotEmpty() && filename != "." && filename != ".." &&
                             '/' !in filename && filename !in this && placement.width == 1 && placement.height == 1)
                         put(filename, placement)
+                        readInsets(WorkspaceItem.Launcher(filename), entry)
                     }
                 }
             }
-            val layout = WorkspaceLayout(programs, clock, hosted, grid, clockPosition, launchers)
-            val occupied = mutableListOf<WorkspacePlacement>()
+            val baseLayout = WorkspaceLayout(programs, clock, hosted, grid, clockPosition, launchers, itemInsets)
+            val layers = document.optJSONArray("layerOrder")
+            require(!document.has("layerOrder") || layers != null)
+            val layerOrder = buildList {
+                val seenLayers = mutableSetOf<WorkspaceItem>()
+                if (layers != null) for (index in 0 until layers.length()) {
+                    val entry = layers.getJSONObject(index)
+                    val item = when (entry.getString("type")) {
+                        "programs" -> WorkspaceItem.Programs
+                        "clock" -> WorkspaceItem.Clock
+                        "app-widget" -> WorkspaceItem.App(entry.getInt("binding"))
+                        "launcher" -> WorkspaceItem.Launcher(entry.getString("file"))
+                        else -> error("Unsupported workspace layer")
+                    }
+                    require(item in baseLayout.placements() && seenLayers.add(item))
+                    add(item)
+                }
+            }
+            val layout = baseLayout.withLayerOrder(layerOrder)
             for ((item, place) in layout.placements()) {
                 require(place.fits(grid) && place.width >= item.minimumSpan &&
                     place.height >= minOf(item.minimumSpan, grid.rows))
-                require(occupied.none(place::overlaps))
-                occupied.add(place)
             }
             return layout
         }

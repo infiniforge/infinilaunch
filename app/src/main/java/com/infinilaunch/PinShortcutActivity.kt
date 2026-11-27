@@ -3,12 +3,18 @@ package com.infinilaunch
 import android.app.Activity
 import android.content.pm.LauncherApps
 import android.os.Bundle
+import android.widget.Toast
 
 /** Android's pin request entry point. The application worker handles storage. */
 class PinShortcutActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         try {
+            if (getSharedPreferences(LaunchApplication.PREFERENCES, MODE_PRIVATE)
+                    .getBoolean(LaunchApplication.PREF_LAYOUT_LOCKED, false)) {
+                Toast.makeText(this, R.string.layout_locked_notice, Toast.LENGTH_SHORT).show()
+                return
+            }
             if (intent.action != LauncherApps.ACTION_CONFIRM_PIN_SHORTCUT) return
             val launcher = getSystemService(LauncherApps::class.java)
             val request = runCatching { launcher.getPinItemRequest(intent) }.getOrNull() ?: return

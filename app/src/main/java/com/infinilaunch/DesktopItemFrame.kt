@@ -16,6 +16,7 @@ internal class DesktopItemFrame(
     private val preview: () -> View,
     open: () -> Unit,
     menu: () -> Unit,
+    private val lockedLongPress: () -> Unit,
     private val drop: (Programs.DesktopEntry, Float, Float) -> Boolean,
 ) : FrameLayout(context) {
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
@@ -24,8 +25,14 @@ internal class DesktopItemFrame(
     private var moved = false
     private var held = false
     private val arm = Runnable {
-        held = workspace.armDesktopMove(this, startX, startY, item.isLink, preview)
-        if (held) performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        if (workspace.isLayoutLocked) {
+            held = true
+            performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+            lockedLongPress()
+        } else {
+            held = workspace.armDesktopMove(this, startX, startY, item.isLink, preview)
+            if (held) performHapticFeedback(HapticFeedbackConstants.LONG_PRESS)
+        }
     }
 
     init {

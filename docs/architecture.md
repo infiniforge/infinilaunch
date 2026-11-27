@@ -31,7 +31,7 @@ public contract.
 | --- | --- |
 | `infini/launch/programs/` | The user-managed Programs tree and its app `.iflink` files. Sync creates missing app links and the destination category folders through Folder. |
 | `infini/launch/dock/` | User-managed shortcuts and other resources. A hidden `.folder.xml` sets the dock presentation. |
-| `infini/launch/desktop/<workspace>/.desktop.json` | Workspace grid, widget positions and bindings, and optional file-launcher placements. |
+| `infini/launch/desktop/<workspace>/.desktop.json` | Workspace grid, widget and launcher bounds (whole-cell spans with optional half-cell position offsets), bottom-to-top layer order, per-item horizontal and vertical dp margins, and widget bindings. |
 | `infini/launch/desktop/<workspace>/` | Direct child files and shortcuts appear as desktop launchers. |
 | `infini/launch/desktop/.active` | The selected workspace directory name. |
 | `infini/launch/workspaces/layout.json` | Legacy layout copied into Home when its desktop settings are missing. |

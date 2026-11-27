@@ -199,6 +199,8 @@ class LaunchApplication : Application() {
     }
 
     companion object {
+        internal const val PREFERENCES = "infinilaunch_preferences"
+        internal const val PREF_LAYOUT_LOCKED = "layout_locked"
         internal const val OPEN_PROGRAMS = "com.infinilaunch.OPEN_PROGRAMS"
         internal const val EXTRA_CATEGORY = "category"
         private const val CHANNEL = "new_applications"

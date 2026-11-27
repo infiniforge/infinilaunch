@@ -44,6 +44,10 @@ internal class AppWidgetSession(
     fun view(binding: WidgetBinding): AppWidgetHostView? {
         val info = provider(binding) ?: return null
         val view = runCatching { host.createView(activity, binding.id, info) }.getOrNull() ?: return null
+        // AppWidgetHostView automatically adds the platform default padding.
+        // WorkspaceLayout owns InfiniLaunch margins, so zero the host padding
+        // and let the widget fill its assigned grid bounds by default.
+        view.setPadding(0, 0, 0, 0)
         view.addOnLayoutChangeListener { _, l, t, r, b, oldL, oldT, oldR, oldB ->
             if (r - l != oldR - oldL || b - t != oldB - oldT) {
                 val density = activity.resources.displayMetrics.density

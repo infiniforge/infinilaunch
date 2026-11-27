@@ -8,11 +8,11 @@ another directory. Swipe left or right on open desktop space to cycle
 through the list. The first and last workspace wrap around. Switches have
 an immediate presentation hook for future InfiniFX effects.
 
-Each workspace uses `.desktop.json` for grid settings, widget bounds, Android
-widget IDs, and any saved file-launcher placements. Home imports the previous
-widget layout from `infini/launch/workspaces/layout.json` when it first needs
+Each workspace uses `.desktop.json` for grid settings, item bounds, margins,
+layer order, Android widget IDs, and saved file-launcher placements. File launchers start in
+one-cell slots. Home imports the previous widget layout from `infini/launch/workspaces/layout.json` when it first needs
 its settings. Files, folders, and shortcuts directly inside a workspace
-appear in free one-cell positions. Folder resolves each tile's icon and label
+start in free one-cell positions. Folder resolves each tile's icon and label
 with the same resource icon resolver used in its file browser. Icons and labels
 scale to the cell. A loaded icon stays visible while Home checks it for updates.
 Hold an item to show the grid, then
@@ -53,23 +53,39 @@ of the workspace grid. The grid fills the available widget area inside
 Android's visible system bars, above the dock. Long-press anywhere on a
 widget and release to enter desktop reorganization, which shows frozen previews
 of every widget and launcher. Tap an item or use the previous/next controls to
-select it, then drag its preview; drag a widget corner to resize it. Items may
-overlap while you arrange the desktop, and every overlap or out-of-grid placement
-is highlighted. **Save** stays disabled until every item fits without overlap,
-then commits the complete arrangement through InfiniFolder in one step. The
+select it, then drag its preview to move it. Dragging moves the item above
+overlapping items. **Raise** and **Lower** change the selected item's layer by
+one step. Widget edge handles resize horizontally or vertically. Light dashed
+lines mark half-cell positions, and dragging snaps item positions to those
+half-cell marks. **Margins** opens horizontal and vertical sliders
+for the selected item, including launchers. They range from −20 to 20 dp and
+update the editor preview live.
+Zero is flush, positive values inset the item, and negative values extend it.
+Margins default to zero; press **Save** to apply changes. InfiniLaunch also removes Android's
+default widget-host padding, so widgets can reach their slot edges at zero
+margin. Overlapping items are saved with their stacking order: the top item
+draws above the others and receives touch interaction. Use the previous/next
+controls to select items, including a fully covered item. Out-of-grid placements
+remain highlighted. **Save** commits the complete
+arrangement through InfiniFolder in one step. The
 editor keeps the draft visible during the save and allows a retry if saving
 fails. **Remove widget** removes the selected widget from the draft, and **Save**
 commits that removal with the other changes. **Cancel** or Back discards the
 entire draft. The dock keeps its separate configuration.
 
-Long-press empty wallpaper for **Home options**. **Grid columns** lets you
-choose 3 through 12 columns, with six by default. InfiniLaunch rounds the
-column count times the available height divided by the available width to
-get the number of rows. For example, an area 2.2 times as high as it is wide
-gets 13 rows with six columns. The cells share edges and stay close to
-square. A small area can compact widgets and use extra rows to keep every
-widget available. Saved layouts are projected into the current grid as the
-window size changes. A placement edit saves the current grid as its reference.
+Long-press empty wallpaper for **Home options**. **Lock layout** prevents
+InfiniLaunch from entering edit mode, changing the grid, adding widgets, or
+dragging desktop items. The setting applies across workspaces. A locked item's
+long-press asks before unlocking and entering edit mode. Normal taps and
+launches continue to work. **Grid columns** lets you
+choose 3 through 12 columns, with six by default. InfiniLaunch uses square
+slots only to count rows: columns times available height divided by available
+width, rounded down. For example, an area 2.3 times as high as it is wide gets
+13 rows with six columns. After counting, slots stretch across the full
+workspace width and height, sharing their edges with the editor grid. A small
+area can compact widgets and use extra rows to keep every widget available.
+Saved layouts are projected into the current grid as the window size changes.
+A placement edit saves the current grid as its reference.
 
 The top-right **Clock** slot uses Android's widget host for a compatible system
 Clock widget. If Android requires binding consent, the slot displays the

@@ -17,6 +17,7 @@ internal class DesktopLaunchers(
     private val workspace: WorkspaceView,
     private val open: (String) -> Unit,
     private val menu: (Programs.DesktopEntry) -> Unit,
+    private val lockedLongPress: (Programs.DesktopEntry) -> Unit,
     private val drop: (Programs.DesktopEntry, Float, Float) -> Boolean,
     private val loadAppearance: (String, Programs.DesktopEntry, Int, (Programs.DesktopAppearance?) -> Unit) -> Unit,
 ) {
@@ -83,7 +84,7 @@ internal class DesktopLaunchers(
             } ?: source
             val view = DesktopItemFrame(
                 context, workspace, displayed, { content(displayed, appearance) },
-                { open(source.filename) }, { menu(displayed) }, drop,
+                { open(source.filename) }, { menu(displayed) }, { lockedLongPress(displayed) }, drop,
             )
             view.addView(content(displayed, appearance), FrameLayout.LayoutParams(-1, -1))
             tiles[item] = Tile(source, appearance, view)

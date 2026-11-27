@@ -116,6 +116,9 @@ class HomeActivity : Activity() {
     private lateinit var editStatus: TextView
     private lateinit var editPreviousButton: Button
     private lateinit var editNextButton: Button
+    private lateinit var editLowerButton: Button
+    private lateinit var editRaiseButton: Button
+    private lateinit var editMarginsButton: PressOnlyButton
     private lateinit var cancelEditButton: Button
     private lateinit var saveButton: Button
     private lateinit var removeButton: Button
@@ -135,6 +138,7 @@ class HomeActivity : Activity() {
     private var layout = storedLayout
     private var savedLayout: String? = null
     private var layoutLoaded = false
+    private var layoutLocked = false
     private var saving = false
     private var started = false
     private var generation = 0
@@ -155,7 +159,7 @@ class HomeActivity : Activity() {
     }
 
     private fun onSyncState(state: LaunchApplication.SyncState) {
-        syncIndicator.visibility = if (state is LaunchApplication.SyncState.Checking) View.VISIBLE else View.INVISIBLE
+        syncIndicator.visibility = if (state is LaunchApplication.SyncState.Checking) View.VISIBLE else View.GONE
         if (state !is LaunchApplication.SyncState.Finished) return
         state.result.onSuccess {
             if (layoutLoaded) status.visibility = View.GONE
@@ -171,6 +175,8 @@ class HomeActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        layoutLocked = getSharedPreferences(LaunchApplication.PREFERENCES, MODE_PRIVATE)
+            .getBoolean(LaunchApplication.PREF_LAYOUT_LOCKED, false)
         if (Build.VERSION.SDK_INT < 35) {
             @Suppress("DEPRECATION")
             window.setDecorFitsSystemWindows(false)
@@ -188,7 +194,7 @@ class HomeActivity : Activity() {
             gravity = Gravity.CENTER_VERTICAL
             background = panel(0xDF18282D.toInt())
             setPadding(dp(8), 0, dp(10), 0)
-            visibility = View.INVISIBLE
+            visibility = View.GONE
             addView(ProgressBar(this@HomeActivity).apply {
                 importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
             }, LinearLayout.LayoutParams(dp(16), dp(16)))
@@ -207,11 +213,13 @@ class HomeActivity : Activity() {
                 showHomeOptions()
                 true
             }
+            setLayoutLocked(layoutLocked)
             dockHitTest = { x, y -> browserPoint(PointF(x, y), dock, "dock") != null }
             onDesktopDragPointer = { x, y, active -> requestDockDropPreview(PointF(x, y), active) }
         }
         installWorkspaceGesture()
         desktopLaunchers = DesktopLaunchers(this, workspace, ::openDesktopEntry, ::showDesktopItemMenu,
+            { entry -> requestUnlockForEdit(WorkspaceItem.Launcher(entry.filename), entry.label) },
             ::dropDesktopItem, ::loadDesktopAppearance)
         applicationWidgets = ApplicationWidgets(this, workspace, ::addHostedWidget) { id, label ->
             beginEditing(WorkspaceItem.App(id), label)
@@ -236,6 +244,28 @@ class HomeActivity : Activity() {
             maxLines = 2
             includeFontPadding = false
         }
+        editLowerButton = Button(this).apply {
+            text = "↓"
+            contentDescription = getString(R.string.lower_desktop_layer)
+            setOnClickListener { editor?.lowerSelected() }
+        }
+        editRaiseButton = Button(this).apply {
+            text = "↑"
+            contentDescription = getString(R.string.raise_desktop_layer)
+            setOnClickListener { editor?.raiseSelected() }
+        }
+        editMarginsButton = PressOnlyButton(this).apply {
+            setText(R.string.desktop_item_margins_button)
+            setAllCaps(false)
+            textSize = 13f
+            maxLines = 1
+            setSingleLine(true)
+            minWidth = 0
+            minimumWidth = 0
+            setPadding(dp(4), 0, dp(4), 0)
+            contentDescription = getString(R.string.desktop_item_margins_title)
+            setOnClickListener { showItemMarginsDialog() }
+        }
         cancelEditButton = Button(this).apply {
             setText(android.R.string.cancel)
             setOnClickListener { closeEditor() }
@@ -250,9 +280,12 @@ class HomeActivity : Activity() {
         }
         val selectionRow = LinearLayout(this).apply {
             gravity = Gravity.CENTER
-            addView(editPreviousButton, LinearLayout.LayoutParams(dp(48), -1))
+            addView(editPreviousButton, LinearLayout.LayoutParams(dp(40), -1))
             addView(editStatus, LinearLayout.LayoutParams(0, -1, 1f))
-            addView(editNextButton, LinearLayout.LayoutParams(dp(48), -1))
+            addView(editMarginsButton, LinearLayout.LayoutParams(dp(88), -1))
+            addView(editLowerButton, LinearLayout.LayoutParams(dp(38), -1))
+            addView(editRaiseButton, LinearLayout.LayoutParams(dp(38), -1))
+            addView(editNextButton, LinearLayout.LayoutParams(dp(40), -1))
         }
         val actionRow = LinearLayout(this).apply {
             gravity = Gravity.CENTER
@@ -1071,6 +1104,10 @@ class HomeActivity : Activity() {
     }
 
     private fun showFolderDropGrid(screen: PointF) {
+        if (layoutLocked) {
+            workspace.showDropGrid(false)
+            return
+        }
         val point = screen.relativeTo(workspace)
         val cell = workspace.cellAt(point.x, point.y)
         workspace.showDropGrid(cell != null, cell?.takeIf { workspace.canPlace(it) })
@@ -1080,6 +1117,10 @@ class HomeActivity : Activity() {
         if (!started || !layoutLoaded || loadingWorkspace || saving || editor != null) return false
         val selected = desktop ?: return false
         val folder = browserPoint(screen, browser, "programs") ?: browserPoint(screen, dock, "dock")
+        if (layoutLocked && folder == null) {
+            Toast.makeText(this, R.string.layout_locked_drag, Toast.LENGTH_SHORT).show()
+            return false
+        }
         val point = screen.relativeTo(workspace)
         val cell = workspace.cellAt(point.x, point.y)
         val target = selected.files.firstOrNull { it.folder && it.filename != entry &&
@@ -1126,13 +1167,15 @@ class HomeActivity : Activity() {
     private fun showDesktopItemMenu(entry: Programs.DesktopEntry) {
         if (editor != null || loadingWorkspace || saving) return
         val selected = desktop?.name ?: return
-        val actions = listOf<Pair<Int, () -> Unit>>(
-            R.string.open_desktop_item to { openDesktopEntry(entry.filename) },
-            R.string.move_on_desktop to { beginEditing(WorkspaceItem.Launcher(entry.filename), entry.label) },
-            R.string.move_desktop_item_to to { transferDesktopEntry(entry, move = true) },
-            R.string.copy_desktop_item_to to { transferDesktopEntry(entry, move = false) },
-            R.string.remove_desktop_item to { removeDesktopEntry(selected, entry) },
-        )
+        val actions = buildList<Pair<Int, () -> Unit>> {
+            add(R.string.open_desktop_item to { openDesktopEntry(entry.filename) })
+            if (!layoutLocked) {
+                add(R.string.move_on_desktop to { beginEditing(WorkspaceItem.Launcher(entry.filename), entry.label) })
+                add(R.string.move_desktop_item_to to { transferDesktopEntry(entry, move = true) })
+                add(R.string.copy_desktop_item_to to { transferDesktopEntry(entry, move = false) })
+                add(R.string.remove_desktop_item to { removeDesktopEntry(selected, entry) })
+            }
+        }
         AlertDialog.Builder(this).setTitle(entry.label)
             .setItems(actions.map { getString(it.first) }.toTypedArray()) { _, index -> actions[index].second() }
             .setNegativeButton(android.R.string.cancel, null)
@@ -1199,15 +1242,18 @@ class HomeActivity : Activity() {
     }
 
     private fun showHomeOptions() {
-        if (editor != null || loadingWorkspace) return
+        if (editor != null || loadingWorkspace || saving) return
         val actions = buildList<Pair<Int, () -> Unit>> {
+            add((if (layoutLocked) R.string.unlock_layout else R.string.lock_layout) to ::toggleLayoutLock)
             add(R.string.workspaces to ::showWorkspaces)
             if (desktop != null) {
                 add(R.string.browse_workspace to { openDesktopEntry(null) })
-                add(R.string.new_desktop_folder to ::showNewDesktopFolder)
+                if (!layoutLocked) add(R.string.new_desktop_folder to ::showNewDesktopFolder)
             }
-            add(R.string.add_widget to ::chooseApplicationWidget)
-            add(R.string.workspace_grid to ::showGridSize)
+            if (!layoutLocked) {
+                add(R.string.add_widget to ::chooseApplicationWidget)
+                add(R.string.workspace_grid to ::showGridSize)
+            }
             add(R.string.home_settings to ::openHomeSettings)
             if (Build.VERSION.SDK_INT >= 33 &&
                 checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
@@ -1225,7 +1271,33 @@ class HomeActivity : Activity() {
             .show()
     }
 
+    private fun toggleLayoutLock() {
+        layoutLocked = !layoutLocked
+        getSharedPreferences(LaunchApplication.PREFERENCES, MODE_PRIVATE).edit()
+            .putBoolean(LaunchApplication.PREF_LAYOUT_LOCKED, layoutLocked).apply()
+        workspace.setLayoutLocked(layoutLocked)
+        Toast.makeText(this, if (layoutLocked) R.string.layout_locked_notice else R.string.layout_unlocked_notice,
+            Toast.LENGTH_SHORT).show()
+    }
+
+    private fun requestUnlockForEdit(item: WorkspaceItem, label: String) {
+        if (!layoutLocked) {
+            beginEditing(item, label)
+            return
+        }
+        AlertDialog.Builder(this)
+            .setTitle(R.string.layout_locked_title)
+            .setMessage(R.string.layout_locked_prompt)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(R.string.unlock_layout) { _, _ ->
+                toggleLayoutLock()
+                beginEditing(item, label)
+            }
+            .show()
+    }
+
     private fun showNewDesktopFolder() {
+        if (layoutLocked) return
         val selected = desktop?.name ?: return
         promptName(R.string.new_desktop_folder, R.string.desktop_folder_name) { name ->
             val version = generation
@@ -1266,23 +1338,22 @@ class HomeActivity : Activity() {
 
     private fun showWorkspaces() {
         val current = desktop ?: return
-        AlertDialog.Builder(this)
+        val dialog = AlertDialog.Builder(this)
             .setTitle(R.string.workspaces)
-            .setSingleChoiceItems(current.workspaces.toTypedArray(), current.workspaces.indexOf(current.name)) { dialog, index ->
-                dialog.dismiss()
+            .setSingleChoiceItems(current.workspaces.toTypedArray(), current.workspaces.indexOf(current.name)) { picker, index ->
+                picker.dismiss()
                 if (current.workspaces[index] != current.name) loadWorkspace(current.workspaces[index])
             }
-            .setNeutralButton(R.string.new_workspace) { _, _ ->
-                promptName(R.string.new_workspace, R.string.workspace_name) { name ->
-                    loadWorkspace(name, create = true)
-                }
+        if (!layoutLocked) dialog.setNeutralButton(R.string.new_workspace) { _, _ ->
+            promptName(R.string.new_workspace, R.string.workspace_name) { name ->
+                loadWorkspace(name, create = true)
             }
-            .setNegativeButton(android.R.string.cancel, null)
-            .show()
+        }
+        dialog.setNegativeButton(android.R.string.cancel, null).show()
     }
 
     private fun showGridSize() {
-        if (!layoutLoaded || saving || workspace.width <= 0 || workspace.height <= 0) {
+        if (layoutLocked || !layoutLoaded || saving || workspace.width <= 0 || workspace.height <= 0) {
             Toast.makeText(this, R.string.layout_unavailable, Toast.LENGTH_SHORT).show()
             return
         }
@@ -1311,6 +1382,10 @@ class HomeActivity : Activity() {
     }
 
     private fun beginEditing(item: WorkspaceItem, label: String): Boolean {
+        if (layoutLocked) {
+            requestUnlockForEdit(item, label)
+            return true
+        }
         if (!started || !layoutLoaded || loadingWorkspace || saving || editor != null || item !in displayedLayout.placements()) return false
         val overlay = WorkspaceEditor(this, displayedLayout, item, label)
         overlay.setLabels(buildMap {
@@ -1407,6 +1482,9 @@ class HomeActivity : Activity() {
         val count = draft.itemCount
         editPreviousButton.isEnabled = canInteract && count > 1
         editNextButton.isEnabled = canInteract && count > 1
+        editLowerButton.isEnabled = canInteract && draft.canLowerSelected
+        editRaiseButton.isEnabled = canInteract && draft.canRaiseSelected
+        editMarginsButton.isEnabled = canInteract && draft.item != null
         cancelEditButton.isEnabled = canInteract
         removeButton.visibility = if (draft.item == null || draft.item is WorkspaceItem.Launcher) View.GONE else View.VISIBLE
         removeButton.isEnabled = canInteract && draft.item != null
@@ -1418,8 +1496,97 @@ class HomeActivity : Activity() {
         saveButton.setText(if (saving) R.string.saving_layout else R.string.save_layout)
     }
 
+    private fun showItemMarginsDialog() {
+        val draft = editor ?: return
+        val initial = draft.selectedInsets
+        var horizontalValue = initial.horizontalDp.coerceIn(MARGIN_SLIDER_MIN_DP, MARGIN_SLIDER_MAX_DP)
+        var verticalValue = initial.verticalDp.coerceIn(MARGIN_SLIDER_MIN_DP, MARGIN_SLIDER_MAX_DP)
+        val horizontalLabel = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 14f
+        }
+        val verticalLabel = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            textSize = 14f
+        }
+        val horizontal = SeekBar(this).apply {
+            max = MARGIN_SLIDER_MAX_DP - MARGIN_SLIDER_MIN_DP
+            progress = horizontalValue - MARGIN_SLIDER_MIN_DP
+            contentDescription = getString(R.string.horizontal_margin_dp, horizontalValue)
+        }
+        val vertical = SeekBar(this).apply {
+            max = MARGIN_SLIDER_MAX_DP - MARGIN_SLIDER_MIN_DP
+            progress = verticalValue - MARGIN_SLIDER_MIN_DP
+            contentDescription = getString(R.string.vertical_margin_dp, verticalValue)
+        }
+        fun updateLivePreview() {
+            horizontalLabel.text = getString(R.string.horizontal_margin_dp, horizontalValue)
+            verticalLabel.text = getString(R.string.vertical_margin_dp, verticalValue)
+            horizontal.contentDescription = horizontalLabel.text
+            vertical.contentDescription = verticalLabel.text
+            draft.setSelectedInsets(horizontalValue, verticalValue)
+            refreshEditorControls()
+        }
+        fun marginRow(label: TextView, slider: SeekBar): LinearLayout = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(label, LinearLayout.LayoutParams(-1, dp(28)))
+            addView(slider, LinearLayout.LayoutParams(-1, dp(40)))
+        }
+        val content = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(20), dp(8), dp(20), dp(8))
+            addView(marginRow(horizontalLabel, horizontal))
+            addView(marginRow(verticalLabel, vertical))
+            addView(TextView(this@HomeActivity).apply {
+                setText(R.string.desktop_margin_explanation)
+                setTextColor(0xFFCAD7D9.toInt())
+                textSize = 12f
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        }
+        updateLivePreview()
+        horizontal.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    horizontalValue = progress + MARGIN_SLIDER_MIN_DP
+                    updateLivePreview()
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+        })
+        vertical.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(seekBar: SeekBar?, progress: Int, fromUser: Boolean) {
+                if (fromUser) {
+                    verticalValue = progress + MARGIN_SLIDER_MIN_DP
+                    updateLivePreview()
+                }
+            }
+            override fun onStartTrackingTouch(seekBar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(seekBar: SeekBar?) = Unit
+        })
+        fun restoreInitialMargins() {
+            draft.setSelectedInsets(initial.horizontalDp, initial.verticalDp)
+            refreshEditorControls()
+        }
+        val dialog = AlertDialog.Builder(this)
+            .setTitle(R.string.desktop_item_margins_title)
+            .setView(content)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok, null)
+            .create()
+        dialog.setOnCancelListener { restoreInitialMargins() }
+        dialog.setOnShowListener {
+            dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setOnClickListener {
+                restoreInitialMargins()
+                dialog.dismiss()
+            }
+            dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener { dialog.dismiss() }
+        }
+        dialog.show()
+    }
+
     private fun chooseApplicationWidget() {
-        if (!layoutLoaded || saving) {
+        if (layoutLocked || !layoutLoaded || saving) {
             Toast.makeText(this, R.string.layout_unavailable, Toast.LENGTH_SHORT).show()
             return
         }
@@ -1440,6 +1607,11 @@ class HomeActivity : Activity() {
     }
 
     private fun addHostedWidget(widget: HostedWidget) {
+        if (layoutLocked) {
+            applicationWidgets.release(widget.binding.id)
+            Toast.makeText(this, R.string.layout_locked_notice, Toast.LENGTH_SHORT).show()
+            return
+        }
         if (!layoutLoaded) {
             pendingHostedWidget = widget
             return
@@ -1464,6 +1636,13 @@ class HomeActivity : Activity() {
         editingDraft: WorkspaceEditor? = null,
     ) {
         val selected = desktop?.name
+        if (layoutLocked && editingDraft == null) {
+            newClockId?.let(clock::release)
+            newWidgetId?.let(applicationWidgets::release)
+            Toast.makeText(this, R.string.layout_locked_notice, Toast.LENGTH_SHORT).show()
+            workspace.setWorkspace(displayedLayout)
+            return
+        }
         if (!layoutLoaded || selected == null || saving || loadingWorkspace) {
             newClockId?.let(clock::release)
             newWidgetId?.let(applicationWidgets::release)
@@ -1547,6 +1726,8 @@ class HomeActivity : Activity() {
     private fun dp(value: Int) = (value * resources.displayMetrics.density + 0.5f).toInt()
 
     companion object {
+        private const val MARGIN_SLIDER_MIN_DP = -20
+        private const val MARGIN_SLIDER_MAX_DP = 20
         private const val WORKSPACE_EDIT_ACTION = "workspace_edit"
         private const val DOCK_CONFIGURATION_ACTION = "dock_configure"
         private const val DOCK_REMOVE_ACTION = "remove_dock_entry"
